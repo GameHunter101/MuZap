@@ -1,0 +1,4 @@
+.env
+launchVlc.sh
+node_modules
+playlists

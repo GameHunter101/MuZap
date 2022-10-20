@@ -1,0 +1,5 @@
+backend/.env
+backend/.vscode
+backend/launchVlc.sh
+backend/node_modules
+backend/playlists

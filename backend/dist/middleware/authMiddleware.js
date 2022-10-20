@@ -22,18 +22,12 @@ const protect = (0, express_async_handler_1.default)((req, res, next) => __await
             // Get token from header
             token = req.headers.authorization.split(" ")[1];
             // Verify token
-            try {
-                const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
-                // Get user from the token
-                req.user = yield userModel_1.default.findById(decoded.id).select("-password");
-            }
-            catch (error) {
-                console.log("token: " + token);
-            }
+            const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
+            // Get user from the token
+            req.user = yield userModel_1.default.findById(decoded.id).select("-password");
             next();
         }
         catch (error) {
-            console.log(error);
             res.status(401);
             throw new Error("Not authorized");
         }

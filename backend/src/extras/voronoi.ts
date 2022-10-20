@@ -1,7 +1,7 @@
 import Canvas from "canvas";
 import fs from "fs/promises";
 
-export default async function voronoi(path:string,id: string, pointsCount: number, canvasSize: number, step?: number) {
+export default async function voronoi(path:string,id: string, pointsCount: number, canvasSize: number, step?: number):Promise<string> {
 	const preTime = Date.now();
 
 	const canvas = Canvas.createCanvas(canvasSize, canvasSize);
@@ -85,6 +85,8 @@ export default async function voronoi(path:string,id: string, pointsCount: numbe
 	} else {
 		fs.appendFile(path, JSON.stringify({}));
 	};
-	file[id] = {url:canvas.toDataURL("image/jpeg")}
+	const url = canvas.toDataURL("image/jpeg");
+	file[id] = {url:url}
 	fs.writeFile(path,JSON.stringify(file));
+	return url;
 }

@@ -20,52 +20,21 @@ const userModel_1 = __importDefault(require("../models/userModel"));
 const axios_1 = __importDefault(require("axios"));
 const spotify_web_api_node_1 = __importDefault(require("spotify-web-api-node"));
 const server_1 = require("../server");
-function partition(array) {
-    const pivot = array[array.length - 1];
-    const leftArray = [];
-    const rightArray = [];
-    for (let i = 0; i < array.length - 1; i++) {
-        if (parseInt(array[i][4]) < parseInt(pivot[4])) {
-            leftArray.push(array[i]);
-        }
-        else {
-            rightArray.push(array[i]);
-        }
-    }
-    return [leftArray, pivot, rightArray];
-}
-function quickSort(array) {
-    // console.log(array[0]);
-    if (array.length <= 1) {
-        return array;
-    }
-    if (array.length === 2) {
-        if (parseInt(array[0][4]) < parseInt(array[1][4])) {
-            return array;
-        }
-        else {
-            return array.reverse();
-        }
-    }
-    const [leftArray, pivot, rightArray] = partition(array);
-    return [
-        ...quickSort(leftArray),
-        pivot,
-        ...quickSort(rightArray),
-    ];
-}
+const voronoi_1 = __importDefault(require("../extras/voronoi"));
 // @desc	Get user playlists
 // @route	GET /api/playlist
 // @access	Private
 const playlistGetUser = (0, express_async_handler_1.default)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const allPlaylists = yield playlistModel_1.default.find();
     const ownedPlaylists = [];
-    allPlaylists.map(playlist => {
-        if (req.user.id in playlist.user) {
-            ownedPlaylists.push(playlist);
+    Promise.all(allPlaylists.map((playlist) => __awaiter(void 0, void 0, void 0, function* () {
+        if (playlist.user.includes(req.user.id)) {
+            const thumbnail = JSON.parse(yield promises_1.default.readFile(process.env.THUMBNAIL_DIR, { encoding: "utf-8" }))[playlist._id].url;
+            ownedPlaylists.push({ data: playlist, thumbnail });
         }
+    }))).then(() => {
+        res.status(200).json(ownedPlaylists);
     });
-    res.status(200).json(allPlaylists);
 }));
 exports.playlistGetUser = playlistGetUser;
 // @desc	Create playlist
@@ -79,10 +48,12 @@ const playlistCreate = (0, express_async_handler_1.default)((req, res) => __awai
     console.log("CREATING PLAYLIST " + req.params.playlist);
     const playlist = yield playlistModel_1.default.create({
         name: decodeURIComponent(req.params.playlist),
-        user: [req.user.id, 1]
+        user: [req.user.id]
     });
+    const random = Math.floor(Math.random() * 30);
+    const thumbnailUrl = yield (0, voronoi_1.default)(process.env.THUMBNAIL_DIR, playlist._id, Math.min(Math.floor(Math.random() * 10), 4), 1024, (random > 10) ? random : undefined);
     promises_1.default.appendFile(`${process.env.PLAYLIST_DIR}${playlist.id}.json`, JSON.stringify({})).then(() => {
-        res.status(200).json({ playlist: "stuff" });
+        res.status(200).json(Object.assign(Object.assign({}, playlist), { thumbnailUrl }));
     });
 }));
 exports.playlistCreate = playlistCreate;
@@ -106,7 +77,7 @@ const playlistRefresh = (0, express_async_handler_1.default)((req, res) => __awa
         throw new Error("User not found");
     }
     // Make sure the logged in user matchs the playlist user
-    if (playlist.user.toString() !== user.id) {
+    if (!(playlist.user.includes(user.id))) {
         res.status(401);
         throw new Error("User not authorized");
     }
@@ -150,7 +121,7 @@ const playlistDelete = (0, express_async_handler_1.default)((req, res) => __awai
         throw new Error("User not found");
     }
     // Make sure the logged in user matchs the playlist user
-    if (playlist.user.toString() !== user.id) {
+    if (!(playlist.user.includes(user.id))) {
         res.status(401);
         throw new Error("User not authorized");
     }
@@ -188,7 +159,7 @@ const playlistAdd = (0, express_async_handler_1.default)((req, res) => __awaiter
         throw new Error("User not found");
     }
     // Make sure the logged in user matchs the playlist user
-    if (playlist.user.toString() !== user.id) {
+    if (!(playlist.user.includes(user.id))) {
         res.status(401);
         throw new Error("User not authorized");
     }
@@ -225,7 +196,7 @@ const playlistRemove = (0, express_async_handler_1.default)((req, res) => __awai
         throw new Error("User not found");
     }
     // Make sure the logged in user matchs the playlist user
-    if (playlist.user.toString() !== user.id) {
+    if (!(playlist.user.includes(user.id))) {
         res.status(401);
         throw new Error("User not authorized");
     }
@@ -303,7 +274,7 @@ const playlistGet = (0, express_async_handler_1.default)((req, res) => __awaiter
         throw new Error("User not found");
     }
     // Make sure the logged in user matchs the playlist user
-    if (playlist.user.toString() !== user.id) {
+    if (!(playlist.user.includes(user.id))) {
         res.status(401);
         throw new Error("User not authorized");
     }

@@ -11,11 +11,12 @@ router.route("/:playlist")
 	.post(protect.protect, playlistController.playlistCreate);
 
 router.get("/", protect.protect, playlistController.playlistGetUser);
+router.post("/convert/users", protect.protect,playlistController.playlistUsers);
 
 router.route("/modify/:playlist")
-	.get(protect.protect, playlistController.playlistGet)
-	.post(protect.protect, playlistController.playlistAdd)
-	.delete(protect.protect, playlistController.playlistRemove);
+.get(protect.protect, playlistController.playlistGet)
+.post(protect.protect, playlistController.playlistAdd)
+.delete(protect.protect, playlistController.playlistRemove);
 
 router.route("/convert/:spotifyUrl").post(protect.protect, playlistController.playlistConvert);
 module.exports = router;

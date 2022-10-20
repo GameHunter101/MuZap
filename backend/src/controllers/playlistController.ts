@@ -10,7 +10,7 @@ import qs from "qs";
 import { playlistAuth } from "../types/playlistAuth";
 import voronoi from "../extras/voronoi";
 import mongoose from "mongoose";
-import {PlaylistInterface} from "../models/playlistModel"
+import { PlaylistInterface } from "../models/playlistModel"
 
 interface PlaylistElement {
 	song: string,
@@ -19,18 +19,30 @@ interface PlaylistElement {
 	searchTerm: string
 }
 
+interface PlaylistDbElement {
+	user: string[],
+	name: string,
+	_id: string,
+	createdAt: string,
+	updatedAt: string,
+	__v: number,
+}
+
 // @desc	Get user playlists
 // @route	GET /api/playlist
 // @access	Private
 const playlistGetUser = asyncHandler(async (req: any, res: Response) => {
 	const allPlaylists = await Playlist.find();
-	const ownedPlaylists: {data:(PlaylistInterface & {_id: mongoose.Types.ObjectId;}),thumbnail:string}[] = []
+	const ownedPlaylists: (PlaylistDbElement & { thumbnail: string })[] = []
 	Promise.all(allPlaylists.map(async playlist => {
 		if (playlist.user.includes(req.user.id)) {
-			const thumbnail:string = JSON.parse(await fs.readFile(process.env.THUMBNAIL_DIR as string,{encoding:"utf-8"}))[playlist._id].url;
-			ownedPlaylists.push({data:playlist,thumbnail});
+			const usefulData: PlaylistDbElement = JSON.parse(JSON.stringify(playlist));
+			const thumbnail = { thumbnail: JSON.parse(await fs.readFile(process.env.THUMBNAIL_DIR as string, { encoding: "utf-8" }))[playlist._id].url };
+			// const thumbnail = { thumbnail: "https://cdn.discordapp.com/attachments/739205391623258122/1029948209151344700/comedian.gif" };
+			ownedPlaylists.push(Object.assign(usefulData, thumbnail));
 		}
-	})).then(()=>{
+	})).then(() => {
+		// console.log(ownedPlaylists);
 		res.status(200).json(ownedPlaylists);
 	})
 })
@@ -50,11 +62,12 @@ const playlistCreate = asyncHandler(async (req: any, res: Response) => {
 		user: [req.user.id]
 	})
 
-	const random = Math.floor(Math.random()*30);
-	const thumbnailUrl = await voronoi(process.env.THUMBNAIL_DIR as string,playlist._id, Math.min(Math.floor(Math.random() * 10), 4), 1024, (random > 10) ? random : undefined);
+	const random = Math.floor(Math.random() * 30);
+	const thumbnail = await voronoi(process.env.THUMBNAIL_DIR as string, playlist._id, Math.max(3, Math.floor(Math.random() * 10)), 1024, (random > 10) ? random : undefined);
+	const usefulData: PlaylistDbElement = JSON.parse(JSON.stringify(playlist));
 
 	fs.appendFile(`${process.env.PLAYLIST_DIR}${playlist.id}.json`, JSON.stringify({})).then(() => {
-		res.status(200).json({ ...playlist, thumbnailUrl });
+		res.status(200).json(Object.assign(usefulData, { thumbnail }));
 	});
 })
 
@@ -148,7 +161,11 @@ const playlistDelete = asyncHandler(async (req: any, res: Response<any, Record<s
 
 	fs.unlink(`${process.env.PLAYLIST_DIR}${req.params.playlist}.json`).then(async () => {
 		await playlist.remove();
-		res.status(200).json({ id: playlist.id });
+		const thumbnails: { [id: string]: { url: string } } = JSON.parse(await fs.readFile(process.env.THUMBNAIL_DIR as string, { encoding: "utf-8" }));
+		delete thumbnails[req.params.playlist];
+		fs.writeFile(process.env.THUMBNAIL_DIR as string, JSON.stringify(thumbnails)).then(() => {
+			res.status(200).json({ id: playlist.id });
+		});
 	})
 })
 
@@ -315,7 +332,8 @@ const playlistGet = asyncHandler(async (req: any, res: Response<any, Record<stri
 		throw new Error("Please specify which playlist you want to retrieve");
 	}
 
-	const playlist = await Playlist.findById(req.params.playlist)
+	const playlist = await Playlist.findById(req.params.playlist);
+	// console.log(playlist)
 
 	if (!playlist) {
 		res.status(400);
@@ -337,14 +355,30 @@ const playlistGet = asyncHandler(async (req: any, res: Response<any, Record<stri
 	}
 
 	const rawPlaylistData = await fs.readFile(`${process.env.PLAYLIST_DIR}${req.params.playlist}.json`, { encoding: "utf-8" });
-
 	const playlistData: { [song: string]: PlaylistElement } = JSON.parse(rawPlaylistData);
 
+	const thumbnail = JSON.parse(await fs.readFile(process.env.THUMBNAIL_DIR as string, { encoding: "utf-8" }))[playlist._id].url;
+	const usefulData: PlaylistDbElement = JSON.parse(JSON.stringify(playlist));
 	res.status(200).json({
-		playlistInfo: playlist,
+		playlistInfo: Object.assign(usefulData, { thumbnail }),
 		playlistContents: playlistData
 	});
 });
+
+// @desc	Get playlist contributers
+// @route	POST /api/playlist/users
+// @access	Private
+const playlistUsers = asyncHandler(async (req: Request, res: Response<any, Record<string, any>>) => {
+	const { users } = req.body as { users: string };
+	Promise.all(
+		JSON.parse(users).map(async (user: string) => {
+			const userFound = await User.findOne({ _id: user });
+			return userFound?.name;
+		})
+	).then((e) => {
+		res.status(200).json(e);
+	})
+})
 
 
 export {
@@ -356,5 +390,6 @@ export {
 	playlistRemove,
 	playlistConvert,
 	playlistGetUser,
+	playlistUsers,
 	PlaylistElement
 }

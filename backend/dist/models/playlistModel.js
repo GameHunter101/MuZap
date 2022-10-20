@@ -8,7 +8,7 @@ const mongoose_1 = __importDefault(require("mongoose"));
 ;
 exports.playlistSchema = new mongoose_1.default.Schema({
     user: {
-        type: [mongoose_1.default.Schema.Types.ObjectId],
+        type: [String],
         required: true,
         ref: "User"
     },

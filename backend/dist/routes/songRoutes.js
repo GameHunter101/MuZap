@@ -30,4 +30,6 @@ const express_1 = __importDefault(require("express"));
 const songController = __importStar(require("../controllers/songController"));
 const router = express_1.default.Router();
 router.get("/:name", songController.songSearch);
+router.use("/retrieve/", express_1.default.static(process.env.SONGS_DIR));
+router.use("/thumbnail/", express_1.default.static(process.env.THUMBNAIL_IMAGE_DIR));
 module.exports = router;

@@ -83,15 +83,14 @@ const userLogin = asyncHandler(async (req: Request<{ playlistId: string; }, any,
 // @route	GET /api/user/me
 // @access	Private
 const userGet = asyncHandler(async (req: any, res: Response<any, Record<string, any>>) => {
-	const { _id, name, email } = await User.findById(req.user.id) as (userInterface & { _id: ObjectId; })
+	const { _id, name, email } = await User.findById(req.user.id) as (userInterface & { _id: ObjectId; });
 
 	res.status(200).json({
 		id: _id,
 		name,
 		email
-	})
+	});
 })
-
 
 
 export {

@@ -1,17 +1,21 @@
 import mongoose from "mongoose";
 
 export interface PlaylistInterface extends mongoose.Document {
-    user: string[],
-    name: string
+    users: string[],
+    name: string,
+    public: boolean,
+    likes: number
 };
 
 export const playlistSchema = new mongoose.Schema<PlaylistInterface>({
-    user: {
+    users: {
         type: [String],
         required: true,
         ref: "User"
     },
-    name: { type: String, required: true }
+    name: { type: String, required: true },
+    public: {type: Boolean, required: true, default: false},
+    likes: {type: Number, required: true, default: 0}
 }, {
     timestamps: true,
 });

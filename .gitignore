@@ -3,3 +3,8 @@ backend/.vscode
 backend/launchVlc.sh
 backend/node_modules
 backend/playlists
+backend/server.crt
+backend/server.csr
+backend/server.key
+spotdl-4.0.5-linux
+spotdl-4.0.5-linux-aarch64

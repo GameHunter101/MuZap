@@ -1,5 +1,5 @@
 import Canvas from "canvas";
-import fs from "fs/promises";
+import fs from "fs";
 
 export default async function voronoi(path:string,id: string, pointsCount: number, canvasSize: number, step?: number):Promise<string> {
 	const preTime = Date.now();
@@ -75,8 +75,15 @@ export default async function voronoi(path:string,id: string, pointsCount: numbe
 		}
 	}
 	ctx.putImageData(image, 0, 0);
+	const promise = new Promise<string>((res,rej)=>{
+		const out = fs.createWriteStream(`${process.env.THUMBNAIL_IMAGE_DIR as string}/${id}.jpg`);
+		const stream = canvas.createJPEGStream();
+		stream.pipe(out);
+		out.on("finish",()=>res(`/api/playlist/thumbnail/${id}.jpg`));
+	});
+	return await promise;
 
-	let file:{[id:string]:{url:string}} = {};
+	/* let file:{[id:string]:{url:string}} = {};
 
 	const exists = await fs.stat(path).then(()=>{return true}).catch(()=>{return false});
 	if (exists) {
@@ -85,8 +92,9 @@ export default async function voronoi(path:string,id: string, pointsCount: numbe
 	} else {
 		fs.appendFile(path, JSON.stringify({}));
 	};
+	canvas.createJPEGStream()
 	const url = canvas.toDataURL("image/jpeg");
 	file[id] = {url:url}
 	fs.writeFile(path,JSON.stringify(file));
-	return url;
+	return url; */
 }

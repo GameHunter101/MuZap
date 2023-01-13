@@ -7,12 +7,14 @@ exports.playlistSchema = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 ;
 exports.playlistSchema = new mongoose_1.default.Schema({
-    user: {
+    users: {
         type: [String],
         required: true,
         ref: "User"
     },
-    name: { type: String, required: true }
+    name: { type: String, required: true },
+    public: { type: Boolean, required: true, default: false },
+    likes: { type: Number, required: true, default: 0 }
 }, {
     timestamps: true,
 });

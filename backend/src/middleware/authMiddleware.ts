@@ -21,13 +21,17 @@ const protect = asyncHandler(async (req: Request, res: Response, next: NextFunct
             next()
         } catch (error) {
             res.status(401);
-            throw new Error("Not authorized");
+            if (error instanceof jwt.TokenExpiredError){
+                throw new Error("Not authorized, access token expired!");
+            } else {
+                throw new Error("Not authorized, token malformed!");
+            }
         }
     }
 
     if (!token) {
         res.status(401);
-        throw new Error("Not authorized, no token");
+        throw new Error("Not authorized, no token.");
     }
 
 })

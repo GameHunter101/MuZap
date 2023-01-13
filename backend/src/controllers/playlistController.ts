@@ -1,16 +1,22 @@
 import { Request, Response } from "express";
 import fs from "fs/promises";
+import * as fsSync from "fs";
 import asyncHandler from "express-async-handler";
 import Playlist from "../models/playlistModel";
 import User from "../models/userModel";
 import axios from "axios";
 import SpotifyWebApi from "spotify-web-api-node";
-import { spotifyTokenPromise } from "../server"
+import { spotifyTokenPromise } from "../server";
 import qs from "qs";
 import { playlistAuth } from "../types/playlistAuth";
 import voronoi from "../extras/voronoi";
 import mongoose from "mongoose";
-import { PlaylistInterface } from "../models/playlistModel"
+import { PlaylistInterface } from "../models/playlistModel";
+import * as ytdl from "ytdl-core";
+import https from "https";
+import * as yt from "youtube-search-without-api-key";
+import {Client} from "youtubei";
+import youtubedl from "youtube-dl-exec";
 
 interface PlaylistElement {
 	song: string,
@@ -22,11 +28,36 @@ interface PlaylistElement {
 interface PlaylistDbElement {
 	user: string[],
 	name: string,
+	public: boolean,
+	likes: number,
 	_id: string,
 	createdAt: string,
 	updatedAt: string,
 	__v: number,
 }
+
+const thumbnailUrl = (playlistId: string) => {
+	return new Promise<string>(async (resolve, reject) => {
+		const allThumbnails = await fs.readdir(process.env.THUMBNAIL_IMAGE_DIR as string);
+		allThumbnails.map(e => {
+			if (e.includes(playlistId)) {
+				// console.log(e.split(process.env.THUMBNAIL_IMAGE_DIR as string));
+				resolve("/api/playlist/thumbnail/" + e.split(process.env.THUMBNAIL_IMAGE_DIR as string)[0]);
+			}
+		})
+		// const file = (await fs.readdir(process.env.THUMBNAIL_IMAGE_DIR as string)).map(e => { if (e.includes(playlistId)) return e }).filter(e => e !== undefined)[0] as string;
+		// const contents = await fs.readFile(process.env.THUMBNAIL_IMAGE_DIR + "/" + file);
+		// const b64 = contents.toString("base64");
+		// resolve(`data:${mime.contentType(path.extname(file))};base64,${b64}`);
+	})
+};
+
+const httpsAgent = new https.Agent({
+	key:fsSync.readFileSync(process.env.SSL_KEY as string),
+	cert:fsSync.readFileSync(process.env.SSL_CERT as string)
+})
+
+const youtube = new Client();
 
 // @desc	Get user playlists
 // @route	GET /api/playlist
@@ -35,11 +66,10 @@ const playlistGetUser = asyncHandler(async (req: any, res: Response) => {
 	const allPlaylists = await Playlist.find();
 	const ownedPlaylists: (PlaylistDbElement & { thumbnail: string })[] = []
 	Promise.all(allPlaylists.map(async playlist => {
-		if (playlist.user.includes(req.user.id)) {
+		if (playlist.users.includes(req.user.id)) {
 			const usefulData: PlaylistDbElement = JSON.parse(JSON.stringify(playlist));
-			const thumbnail = { thumbnail: JSON.parse(await fs.readFile(process.env.THUMBNAIL_DIR as string, { encoding: "utf-8" }))[playlist._id].url };
-			// const thumbnail = { thumbnail: "https://cdn.discordapp.com/attachments/739205391623258122/1029948209151344700/comedian.gif" };
-			ownedPlaylists.push(Object.assign(usefulData, thumbnail));
+			// const thumbnail = { thumbnail: JSON.parse(await fs.readFile(process.env.THUMBNAIL_DIR as string, { encoding: "utf-8" }))[playlist._id].url };
+			ownedPlaylists.push(Object.assign(usefulData, { thumbnail: await thumbnailUrl(playlist._id) }));
 		}
 	})).then(() => {
 		// console.log(ownedPlaylists);
@@ -59,8 +89,8 @@ const playlistCreate = asyncHandler(async (req: any, res: Response) => {
 
 	const playlist = await Playlist.create({
 		name: decodeURIComponent(req.params.playlist),
-		user: [req.user.id]
-	})
+		users: [req.user.id]
+	});
 
 	const random = Math.floor(Math.random() * 30);
 	const thumbnail = await voronoi(process.env.THUMBNAIL_DIR as string, playlist._id, Math.max(3, Math.floor(Math.random() * 10)), 1024, (random > 10) ? random : undefined);
@@ -80,7 +110,7 @@ const playlistRefresh = asyncHandler(async (req: any, res: Response) => {
 		res.status(400);
 		throw new Error("Please specify which playlist you want to retrieve");
 	}
-
+	console.log(req.params.id);
 	const playlist = await Playlist.findById(req.params.id);
 
 	if (!playlist) {
@@ -97,7 +127,7 @@ const playlistRefresh = asyncHandler(async (req: any, res: Response) => {
 	}
 
 	// Make sure the logged in user matchs the playlist user
-	if (!(playlist.user.includes(user.id))) {
+	if (!(playlist.users.includes(user.id))) {
 		res.status(401);
 		throw new Error("User not authorized");
 	}
@@ -106,10 +136,11 @@ const playlistRefresh = asyncHandler(async (req: any, res: Response) => {
 
 	const playlistData: { [song: string]: PlaylistElement } = JSON.parse(rawPlaylistData);
 
-
+	const test: string[] = []
 
 	Object.keys(playlistData).map(async (song, i) => {
-		await axios.get<PlaylistElement>(`http://141.148.84.127:3000/api/song/${encodeURIComponent(playlistData[song].searchTerm)}`).then((response) => {
+		test.push(playlistData[song].searchTerm);
+		/* await axios.get<PlaylistElement>(`http://129.213.46.224:3000/api/song/${encodeURIComponent(playlistData[song].searchTerm)}`).then((response) => {
 			playlistData[song].url = response.data.url;
 			console.log(playlistData[song].url);
 			if (i === Object.keys.length - 1) {
@@ -122,9 +153,9 @@ const playlistRefresh = asyncHandler(async (req: any, res: Response) => {
 			res.status(400);
 			console.log(error);
 			throw new Error("Song unsuccesfully converted");
-		});
+		}); */
 	});
-
+	res.status(200).json(test);
 
 })
 
@@ -154,19 +185,31 @@ const playlistDelete = asyncHandler(async (req: any, res: Response<any, Record<s
 	}
 
 	// Make sure the logged in user matchs the playlist user
-	if (!(playlist.user.includes(user.id))) {
+	if (!(playlist.users.includes(user.id))) {
 		res.status(401);
 		throw new Error("User not authorized");
 	}
-
-	fs.unlink(`${process.env.PLAYLIST_DIR}${req.params.playlist}.json`).then(async () => {
-		await playlist.remove();
-		const thumbnails: { [id: string]: { url: string } } = JSON.parse(await fs.readFile(process.env.THUMBNAIL_DIR as string, { encoding: "utf-8" }));
-		delete thumbnails[req.params.playlist];
-		fs.writeFile(process.env.THUMBNAIL_DIR as string, JSON.stringify(thumbnails)).then(() => {
-			res.status(200).json({ id: playlist.id });
-		});
-	})
+	const playlistUsers = playlist.users;
+	await Playlist.findByIdAndUpdate(req.params.playlist, { users: playlistUsers.filter(e => e !== req.user.id) }, { new: true }).then(async updatedPlaylist => {
+		if (updatedPlaylist?.users.length === 0) {
+			const deleteEntry = async () => {
+				await playlist.remove();
+				(await fs.readdir(process.env.THUMBNAIL_IMAGE_DIR as string)).map(e => {
+					if (e.includes(req.params.playlist)) {
+						fs.unlink(process.env.THUMBNAIL_IMAGE_DIR + "/" + e);
+					}
+				});
+				/* const thumbnails: { [id: string]: { url: string } } = JSON.parse(await fs.readFile(process.env.THUMBNAIL_DIR as string, { encoding: "utf-8" }));
+				delete thumbnails[req.params.playlist];
+				fs.writeFile(process.env.THUMBNAIL_DIR as string, JSON.stringify(thumbnails)).then(() => {
+					res.status(200).json({ id: playlist.id });
+				}); */
+			}
+			await fs.unlink(`${process.env.PLAYLIST_DIR}${req.params.playlist}.json`);
+			deleteEntry();
+		}
+		res.status(200).json({ id: playlist.id });
+	});
 })
 
 // @desc	Add to playlist
@@ -204,7 +247,7 @@ const playlistAdd = asyncHandler(async (req: any, res: Response<any, Record<stri
 		throw new Error("User not found");
 	}
 	// Make sure the logged in user matchs the playlist user
-	if (!(playlist.user.includes(user.id))) {
+	if (!(playlist.users.includes(user.id))) {
 		res.status(401);
 		throw new Error("User not authorized");
 	}
@@ -252,7 +295,7 @@ const playlistRemove = asyncHandler(async (req: any, res: Response<any, Record<s
 	}
 
 	// Make sure the logged in user matchs the playlist user
-	if (!(playlist.user.includes(user.id))) {
+	if (!(playlist.users.includes(user.id))) {
 		res.status(401);
 		throw new Error("User not authorized");
 	}
@@ -294,32 +337,56 @@ const playlistConvert = asyncHandler(async (req: any, res: Response<any, Record<
 			}
 		});
 	}
-
-	Promise.all(
-		songs.map(async (song, i) => {
-			const fullSongName = `${song[0]} ${artists[i]}`;
-			const rawData = (await axios.get<PlaylistElement>(`http://141.148.84.127:3000/api/song/${encodeURIComponent(fullSongName)}`)).data
-			// const rawData = await getUrl(fullSongName, accessToken, song[1]);
-			if (rawData.url === undefined) {
-				brokenSongs.push([fullSongName]);
+	for (let i = 0; i < songs.length; i++) {
+		const song = songs[i]
+		// const next = songs[i+1]
+		// return rawData;
+		
+		const fullSongName = `${song[0]} ${artists[i]}`;
+		let rawData: string[] = [song[0], "", song[1], ""];
+		// const rawData = (await axios.get<PlaylistElement>(`http://129.213.46.224:3000/api/song/${encodeURIComponent(fullSongName)}`)).data
+		// const rawData = await getUrl(fullSongName, accessToken, song[1]);
+		// const id = (await youtube.findOne(fullSongName,{type:"video",sortBy:"relevance"}))?.id || "BROKEN";
+		try {
+			const id = (await yt.search(fullSongName))[0].id.videoId;
+			rawData[3] = id;
+			if (!fsSync.existsSync(`${process.env.SONGS_DIR}${id}.webm`)) {
+				axios.get<PlaylistElement>(`https://129.213.46.224:3000/api/song/download/${id}`,{httpsAgent});
+			} else {
+				console.log(fullSongName, " already exists");
 			}
-			fullSongData[i] = ([song[0], rawData.url, song[1], fullSongName, "" + i]);
-		})
-	).then(async () => {
-
+			// await youtubedl("https://www.youtube.com/watch?v="+id,{keepVideo:false, output:`/home/ubuntu/MuZap/backend/playlists/songs/${id}.webm`}).then(()=>console.log(fullSongName));
+			console.log(fullSongName);
+			rawData[1] = `/api/song/retrieve/${id}.webm`;
+			// const url = format.url;
+		} catch (error) {
+			// brokenSongs.push([fullSongName]);
+			rawData[1] = "BROKEN";
+			rawData[3] = "BROKEN";
+		}
+		fullSongData[i] = rawData;
+		// await getData(next,i+1);
+	}
+	
 		const playlistData: { [song: string]: PlaylistElement } = {};
-
+	
 		fullSongData.map(song => playlistData[song[0]] = { song: song[0], url: song[1], thumbnail: song[2], searchTerm: song[3] });
-
+	
 		const playlist = await Playlist.create({
 			name: decodeURIComponent(rawPlaylistData.name),
-			user: req.user.id
-		})
-
+			users: [req.user.id],
+		});
+	
+		const random = Math.floor(Math.random() * 30);
+		const thumbnail = await voronoi(process.env.THUMBNAIL_DIR as string, playlist._id, Math.max(3, Math.floor(Math.random() * 10)), 1024, (random > 10) ? random : undefined);
+		const usefulData: PlaylistDbElement = JSON.parse(JSON.stringify(playlist));
+	
 		fs.appendFile(`${process.env.PLAYLIST_DIR}${playlist.id}.json`, JSON.stringify(playlistData)).then(() => {
-			res.status(200).json({ playlistName: rawPlaylistData.name, playlistId: playlist.id, playlistData: playlistData, brokenSongs: brokenSongs });
-		})
-	});
+			res.status(200).json(Object.assign(usefulData, { thumbnail }));
+			// res.status(200).json({ playlistName: rawPlaylistData.name, playlistId: playlist.id, playlistData: playlistData, brokenSongs: brokenSongs });
+		});
+	
+
 });
 
 // @desc	Get specific playlist
@@ -349,7 +416,7 @@ const playlistGet = asyncHandler(async (req: any, res: Response<any, Record<stri
 	}
 
 	// Make sure the logged in user matchs the playlist user
-	if (!(playlist.user.includes(user.id))) {
+	if (!(playlist.users.includes(user.id)) && playlist.public === false) {
 		res.status(401);
 		throw new Error("User not authorized");
 	}
@@ -357,16 +424,16 @@ const playlistGet = asyncHandler(async (req: any, res: Response<any, Record<stri
 	const rawPlaylistData = await fs.readFile(`${process.env.PLAYLIST_DIR}${req.params.playlist}.json`, { encoding: "utf-8" });
 	const playlistData: { [song: string]: PlaylistElement } = JSON.parse(rawPlaylistData);
 
-	const thumbnail = JSON.parse(await fs.readFile(process.env.THUMBNAIL_DIR as string, { encoding: "utf-8" }))[playlist._id].url;
+	// const thumbnail = JSON.parse(await fs.readFile(process.env.THUMBNAIL_DIR as string, { encoding: "utf-8" }))[playlist._id].url;
 	const usefulData: PlaylistDbElement = JSON.parse(JSON.stringify(playlist));
 	res.status(200).json({
-		playlistInfo: Object.assign(usefulData, { thumbnail }),
+		playlistInfo: Object.assign(usefulData, { thumbnail: await thumbnailUrl(playlist._id) }),
 		playlistContents: playlistData
 	});
 });
 
 // @desc	Get playlist contributers
-// @route	POST /api/playlist/users
+// @route	POST /api/playlist/convert/users
 // @access	Private
 const playlistUsers = asyncHandler(async (req: Request, res: Response<any, Record<string, any>>) => {
 	const { users } = req.body as { users: string };
@@ -380,6 +447,54 @@ const playlistUsers = asyncHandler(async (req: Request, res: Response<any, Recor
 	})
 })
 
+// @desc Update playlist meta data
+// @route POST /api/playlist/modify/:playlist
+// @access Private
+const playlistUpdate = asyncHandler(async (req: any, res: Response) => {
+	if (!req.params.playlist) {
+		res.status(400);
+		throw new Error("Please specify which playlist you want to update");
+	}
+
+	const playlist = await Playlist.findById(req.params.playlist);
+	// console.log(playlist)
+
+	if (!playlist) {
+		res.status(400);
+		throw new Error("Playlist not found");
+	}
+
+	const user = await User.findById(req.user.id);
+
+	// Check for user
+	if (!user) {
+		res.status(401);
+		throw new Error("User not found");
+	}
+
+	// Make sure the logged in user matchs the playlist user
+	if (!(playlist.users.includes(user.id)) && playlist.public === false) {
+		res.status(401);
+		throw new Error("User not authorized");
+	}
+	let publicStatus = playlist.public;
+	const playlistUsers = playlist.users;
+	if (req.body.data) {
+		publicStatus = !publicStatus;
+	}
+	if (req.body.newUser) {
+		if (!playlistUsers.includes(req.body.newUser)) {
+			playlistUsers.push(req.body.newUser);
+		}
+	}
+
+	await Playlist.findByIdAndUpdate(req.params.playlist, Object.assign(req.body, { public: publicStatus }, { users: playlistUsers }), { new: true }).then(async (updatedPlaylist) => {
+		const usefulData = JSON.parse(JSON.stringify(updatedPlaylist));
+		res.status(200).json({
+			playlistInfo: Object.assign(usefulData, { thumbnail: await thumbnailUrl(req.params.playlist) })
+		});
+	});
+});
 
 export {
 	playlistGet,
@@ -391,5 +506,6 @@ export {
 	playlistConvert,
 	playlistGetUser,
 	playlistUsers,
+	playlistUpdate,
 	PlaylistElement
 }
